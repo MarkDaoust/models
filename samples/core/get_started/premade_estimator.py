@@ -26,6 +26,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', default=100, type=int, help='batch size')
 parser.add_argument('--train_steps', default=1000, type=int,
                     help='number of training steps')
+parser.add_argument('--export_dir', default=None, type=str,
+                    help='directory to export the model to if unset, no'
+                         ' export is made.')
 
 def main(argv):
     args = parser.parse_args(argv[1:])
@@ -82,6 +85,17 @@ def main(argv):
         print(template.format(iris_data.SPECIES[class_id],
                               100 * probability, expec))
 
+    if args.export_dir is not None:
+        print('\n\nExporting to "{}":\n'.format(args.export_dir))
+        # Export the model,
+        prototype = { key:tf.convert_to_tensor(value) for key, value
+                      in predict_x.items()}
+
+        input_fn = (tf.estimator.export.
+                    build_raw_serving_input_receiver_fn(prototype))
+
+        exported_to = classifier.export_savedmodel(args.export_dir, input_fn)
+        print("\nExported to: {}\n".format(exported_to))
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
