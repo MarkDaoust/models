@@ -28,8 +28,6 @@ import iris_data
 
 parser = argparse.ArgumentParser()
 
-DEFAULT_NPY_PATH = "inputs.npy"
-
 parser.add_argument('--batch_size', default=100,
                     type=int, help='batch size')
 parser.add_argument('--train_steps', default=200,
@@ -97,8 +95,6 @@ def main(argv):
         steps=args.train_steps)
 
     # Build the receiver function.
-
-
     if args.receiver_format == EXAMPLE_FORMAT:
         my_feature_spec = float_dict_feature_spec(dict(features))
 
