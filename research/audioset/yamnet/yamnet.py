@@ -91,18 +91,36 @@ _YAMNET_LAYER_DEFS = [
     (_separable_conv, [3, 3], 1, 1024)
 ]
 
+class FlattenBatchDims(tf.keras.layers.Layer):
+  def call(self, net):
+    net = tf.expand_dims(net, -1)
+    shape = tf.shape(net)
+    batch_shape = shape[:-3]
+    item_shape = shape[-3:]
+    flattened_batch_shape = tf.concat([[-1], item_shape], axis=-1)
+    net = tf.reshape(net, flattened_batch_shape)
+    return net, batch_shape
 
 def yamnet(features, params):
   """Define the core YAMNet mode in Keras."""
-  net = layers.Reshape(
-      (params.patch_frames, params.patch_bands, 1),
-      input_shape=(params.patch_frames, params.patch_bands))(features)
+  net, batch_shape = FlattenBatchDims()(features)
+
   for (i, (layer_fun, kernel, stride, filters)) in enumerate(_YAMNET_LAYER_DEFS):
     net = layer_fun('layer{}'.format(i + 1), kernel, stride, filters, params)(net)
   embeddings = layers.GlobalAveragePooling2D()(net)
   logits = layers.Dense(units=params.num_classes, use_bias=True)(embeddings)
   predictions = layers.Activation(activation=params.classifier_activation)(logits)
-  return predictions, embeddings
+
+  # Unflatten the batch axes back to its shape from earlier.
+  def fold_batch(arg):
+    item_shape = tf.shape(arg)[1:]
+    new_shape = tf.concat([batch_shape, item_shape], axis=-1)
+    return tf.reshape(arg, new_shape)
+
+  return {
+      'embeddings': fold_batch(embeddings),
+      'logits': fold_batch(logits),
+      'predictions': fold_batch(predictions)}
 
 
 def yamnet_frames_model(params):
@@ -112,19 +130,23 @@ def yamnet_frames_model(params):
     params: An instance of Params containing hyperparameters.
 
   Returns:
-    A model accepting (num_samples,) waveform input and emitting:
+    A model accepting (num_samples,) waveform input and emitting a dictiopnary
+    of outputs:
+    - logits: (num_patches, num_classes) matrix of class logits per time frame
     - predictions: (num_patches, num_classes) matrix of class scores per time frame
     - embeddings: (num_patches, embedding size) matrix of embeddings per time frame
     - log_mel_spectrogram: (num_spectrogram_frames, num_mel_bins) spectrogram feature matrix
   """
-  waveform = layers.Input(batch_shape=(None,), dtype=tf.float32)
+  waveform = layers.Input(shape=(None,), dtype=tf.float32)
   waveform_padded = features_lib.pad_waveform(waveform, params)
   log_mel_spectrogram, features = features_lib.waveform_to_log_mel_spectrogram_patches(
       waveform_padded, params)
-  predictions, embeddings = yamnet(features, params)
+  outputs = yamnet(features, params)
+  outputs['log_mel_spectrogram'] = log_mel_spectrogram
+
   frames_model = Model(
       name='yamnet_frames', inputs=waveform,
-      outputs=[predictions, embeddings, log_mel_spectrogram])
+      outputs=outputs)
   return frames_model
 
 

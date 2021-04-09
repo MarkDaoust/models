@@ -55,7 +55,7 @@ class YAMNet(tf.Module):
   def class_map_path(self):
     return self._class_map_asset.asset_path
 
-  @tf.function(input_signature=(tf.TensorSpec(shape=[None], dtype=tf.float32),))
+  @tf.function(input_signature=(tf.TensorSpec(shape=[None, None], dtype=tf.float32),))
   def __call__(self, waveform):
     return self._yamnet(waveform)
 
@@ -65,8 +65,10 @@ def check_model(model_fn, class_map_path, params):
 
   """Applies yamnet_test's sanity checks to an instance of YAMNet."""
   def clip_test(waveform, expected_class_name, top_n=10):
-    predictions, embeddings, log_mel_spectrogram = model_fn(waveform)
-    clip_predictions = np.mean(predictions, axis=0)
+    waveform = tf.constant(waveform)
+    waveform = waveform[None,:]
+    outputs = model_fn(waveform)
+    clip_predictions = np.mean(outputs['predictions'][0], axis=0)
     top_n_indices = np.argsort(clip_predictions)[-top_n:]
     top_n_scores = clip_predictions[top_n_indices]
     top_n_class_names = yamnet_classes[top_n_indices]
@@ -168,10 +170,7 @@ def make_tflite_export(weights_path, export_dir):
 
   def run_model(waveform):
     results = runner(waveform=waveform)
-    predictions = results['output_0']
-    embeddings = results['output_1']
-    log_mel_spectrogram = results['output_2']
-    return predictions, embeddings, log_mel_spectrogram
+    return results
 
   check_model(run_model, 'yamnet_class_map.csv', params)
   log('Done')

@@ -37,8 +37,10 @@ class YAMNetTest(tf.test.TestCase):
 
   def clip_test(self, waveform, expected_class_name, top_n=10):
     """Run the model on the waveform, check that expected class is in top-n."""
-    predictions, embeddings, log_mel_spectrogram = YAMNetTest._yamnet(waveform)
-    clip_predictions = np.mean(predictions, axis=0)
+    waveform = tf.constant(waveform)
+    waveform = waveform[None,:]
+    outputs = YAMNetTest._yamnet(waveform)
+    clip_predictions = np.mean(outputs['predictions'][0], axis=0)
     top_n_indices = np.argsort(clip_predictions)[-top_n:]
     top_n_scores = clip_predictions[top_n_indices]
     top_n_class_names = YAMNetTest._yamnet_classes[top_n_indices]

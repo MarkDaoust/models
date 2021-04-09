@@ -73,7 +73,7 @@ def waveform_to_log_mel_spectrogram_patches(waveform, params):
         signal=log_mel_spectrogram,
         frame_length=patch_window_length_samples,
         frame_step=patch_hop_length_samples,
-        axis=0)
+        axis=-2)
     # features has shape [<# patches>, <# STFT frames in an patch>, params.mel_bands]
 
     return log_mel_spectrogram, features
@@ -88,7 +88,7 @@ def pad_waveform(waveform, params):
       params.patch_window_seconds +
       params.stft_window_seconds - params.stft_hop_seconds)
   min_num_samples = tf.cast(min_waveform_seconds * params.sample_rate, tf.int32)
-  num_samples = tf.shape(waveform)[0]
+  num_samples = tf.shape(waveform)[-1]
   num_padding_samples = tf.maximum(0, min_num_samples - num_samples)
 
   # In addition, there might be enough waveform for one or more additional
@@ -103,8 +103,9 @@ def pad_waveform(waveform, params):
   num_padding_samples += (
       hop_samples * num_hops_after_first_patch - num_samples_after_first_patch)
 
-  padded_waveform = tf.pad(waveform, [[0, num_padding_samples]],
-                           mode='CONSTANT', constant_values=0.0)
+  pads = [[0, 0] for n in range(len(waveform.shape))]
+  pads[-1][-1] = num_padding_samples
+  padded_waveform = tf.pad(waveform, pads, mode='CONSTANT', constant_values=0.0)
   return padded_waveform
 
 
@@ -141,20 +142,19 @@ def _tflite_stft_magnitude(signal, frame_length, frame_step, fft_length):
         name='imaginary_dft_matrix')
     signal_frame_length = tf.shape(framed_signal)[-1]
     half_pad = (fft_length - signal_frame_length) // 2
+
+    # Don't add any padding in the batch or frame dimensions.
+    pads = [[0, 0] for n in range(len(framed_signal.shape))]
+    # Pad before and after the signal within each frame.
+    pads[-1] = [half_pad, fft_length - signal_frame_length - half_pad]
     padded_frames = tf.pad(
         framed_signal,
-        [
-            # Don't add any padding in the frame dimension.
-            [0, 0],
-            # Pad before and after the signal within each frame.
-            [half_pad, fft_length - signal_frame_length - half_pad]
-        ],
+        pads,
         mode='CONSTANT',
         constant_values=0.0)
     real_stft = tf.matmul(padded_frames, real_dft_matrix)
     imag_stft = tf.matmul(padded_frames, imag_dft_matrix)
     return real_stft, imag_stft
-
   def _complex_abs(real, imag):
     return tf.sqrt(tf.add(real * real, imag * imag))
 
